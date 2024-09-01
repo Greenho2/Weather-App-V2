@@ -1,0 +1,169 @@
+/*Layout for the main page*/
+
+
+/*Background color*/
+.App {
+  background-color: #282c34;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+  min-height: 100vh;
+}
+
+
+/*Used to display the title of the page*/
+
+.Title{
+  background-color: #282c34;
+  display: flex;
+  color: white;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  margin-left: 20px;
+  margin-right: 50px;
+  
+}
+
+.Title-container {
+  background-color: #282c34;
+  
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.Title-title {
+  font-size: 5em;
+  margin: 0;
+  padding: 0;
+}
+
+
+.Sun-icon{
+  margin-left: 400px;
+  align-items: right;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .Sun-icon {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+
+/*Used to Keep the Search fields and list on the left*/
+.Main-container {
+  background-color: #282c34;
+  display: flex;
+  flex: 1;
+}
+
+.Weather-input {
+  padding: 10px;
+  font-size: 1em;
+  margin-bottom: 10px;
+  margin-right: 20px;
+}
+
+.weather-button {
+  padding: 10px;
+  font-size: 1em;
+  background-color: #61dafb;
+  border: none;
+  border-radius: 50px;
+  color: white;
+  cursor: pointer;
+  
+}
+
+.weather-button:hover {
+  background-color: #4fa3b5;
+}
+
+.Sidebar {
+  background-color: #282c34;
+  width: 500px;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.Search-container {
+  background-color: #282c34;
+  margin-bottom: 20px;
+}
+
+
+/*Used to display the weather in the center and the forecast below it*/
+.Weather-container{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 20px;
+  background-color: #282c34;
+}
+
+
+.Weather-info-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #282c34;
+}
+
+.Weather-info {
+  color: white;
+  margin-bottom: 20px;
+  
+}
+
+.Weather-block {
+  color: black;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  width: 100%;
+  background-color: #33ffe9;
+  
+}
+
+.Weather-day {
+  flex: 1;
+  text-align: center;
+  padding: 50px;
+}
+
+
+/*Used to Keep the info button on the bottom right*/
+.Info-icon{
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  position: fixed;
+  bottom: 20px; 
+  right: 20px; 
+  
+  z-index: 1000;
+}
+
+
+/*Error Display Options*/
+.Error {
+  color: red;
+  text-align: center;
+}
+
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
