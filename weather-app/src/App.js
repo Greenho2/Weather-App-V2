@@ -15,6 +15,7 @@ import axios from 'axios';
 //City to coordinates are obtained through nominatim.openstreetmap.org as open-meteo takes coordinates only
 const weather_URL = 'https://api.open-meteo.com/v1/forecast';
 const location_URL = 'https://nominatim.openstreetmap.org/search';
+const data_URL = 'https://archive-api.open-meteo.com/v1/archive?'
 
 function App() {
 
@@ -38,6 +39,8 @@ function App() {
   //Used to toggle the popup for info on PM Accelerator
   const [popUp, setPopUp] = useState(false);
 
+  const [predictTemp, setPredictTemp] = useState([]);
+
   //Toggle for PM Accelerator
   const togglePopUp = ()=>{
     setPopUp (!popUp)
@@ -54,7 +57,7 @@ function App() {
     setSelectedCity(selected);
 
     const selectedOption = cityOptions.find(option => option.display_name === selected);
-
+    
     if (selectedOption) {
       //Fetchs the weather
       fetchWeather(selectedOption);
@@ -71,6 +74,74 @@ function App() {
       if (!weatherResponse.ok) throw new Error('Failed to fetch weather data');
 
       const weatherData = await weatherResponse.json();
+      try {
+        console.log(encodeURIComponent(locationData.display_name))
+
+        //Search predictions database for the name
+        const dbResponse = await axios.get(`http://localhost:5000/api/predictions?name=${encodeURIComponent(locationData.display_name)}`);
+        
+        const dbData = dbResponse.data;
+
+        //If found, put those values into an array
+        if (dbData.length > 0) {
+          setPredictTemp([
+            dbData[0].Day0,
+            dbData[0].Day1,
+            dbData[0].Day2,
+            dbData[0].Day3,
+            dbData[0].Day4,
+            dbData[0].Day5,
+            dbData[0].Day6,
+          ]);
+        
+            setWeather(weatherData);
+            return;
+        }
+    } catch (err) {
+        console.error('Database check error:', err.message);
+    }
+    //Prediction not in database
+    //Grab the future weather data to use in prediction model
+      const futureWeatherData = {
+        daily: {
+            maxTemp: weatherData.daily.temperature_2m_max,
+            minTemp: weatherData.daily.temperature_2m_min,
+            time: weatherData.daily.time,
+        }
+      
+      };
+      
+      //Change the form so it is consistent for the python model
+      const transformedFutureWeatherData = futureWeatherData.daily.time.map((date, index) => ({
+        date,
+        minTemp: futureWeatherData.daily.minTemp[index],
+        maxTemp: futureWeatherData.daily.maxTemp[index]
+      }));
+
+      sendFutureWeatherData(transformedFutureWeatherData);
+      
+      const prediction = await fetchAndProcessData(lat,lon);
+
+      
+      const newPrediction = prediction.predicted_avg_temps
+      
+      //Reformat the input
+      const [ Day0, Day1, Day2, Day3, Day4, Day5 , Day6 ] = newPrediction;
+
+      await axios.post('http://localhost:5000/api/predictions', {
+            name: locationData.display_name,
+            Day0: Day0,
+            Day1: Day1,
+            Day2: Day2,
+            Day3: Day3,
+            Day4: Day4,
+            Day5: Day5,
+            Day6: Day6,
+        });
+
+      
+      
+      setPredictTemp(newPrediction);
       setWeather(weatherData);
       setError('');
       
@@ -90,15 +161,14 @@ function App() {
     setError('');
     
     try {
-        //console.log(encodeURIComponent(city))
+    
         //Search Database for city
         const dbResponse = await axios.get(`http://localhost:5000/api/locations?city=${encodeURIComponent(city)}`);
-        //console.log(dbResponse.data);
+
         const dbData = dbResponse.data;
 
         //If found, put those values into the dropdown of selectable cities
         if (dbData.length > 0) {
-            //console.log('found');
             setOptions(dbData.map(location => ({
                 display_name: location.name,
                 lat: location.lat,
@@ -112,11 +182,13 @@ function App() {
     }
 
     try {
+
       //Fetch the weather at given location because it has not been found in database
         const locationResponse = await fetch(`${location_URL}?q=${city}&format=json&limit=5`);
         if (!locationResponse.ok) throw new Error('Failed to fetch location data');
 
         const locationData = await locationResponse.json();
+        
         //No place found
         if (locationData.length === 0) {
             setError('City not found');
@@ -185,6 +257,137 @@ function App() {
     );
   };
 
+  //Fetch historical min/max temperature data for each day at the location from 1/1/2000 to 6 days before today as the API only saves up to 6 days prior
+  const fetchPastWeatherData = async (latitude, longitude) => {
+
+    const today = new Date();
+    const endDate = new Date(today.setDate(today.getDate() - 6)).toISOString().split('T')[0];
+    
+    const response = await fetch(`${data_URL}latitude=${latitude}&longitude=${longitude}&start_date=2000-01-01&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
+    
+    if (!response.ok) throw new Error('Failed to fetch past weather data');
+
+    return await response.json();
+  };
+
+  //Fetch the hourly temp to find the average for that day
+  const fetchHourlyData = async(latitude, longitude) =>{
+
+    const today = new Date();
+    const endDate = new Date(today.setDate(today.getDate() - 6)).toISOString().split('T')[0];
+    
+    const response = await fetch(`${data_URL}latitude=${latitude}&longitude=${longitude}&start_date=2000-01-01&end_date=${endDate}&hourly=temperature_2m&timezone=auto`);
+    
+    if (!response.ok) throw new Error('Failed to fetch past weather data');
+    
+    return await response.json();
+  };
+
+
+  //Calculate the average temp of each day by adding the hourly temperature and dividing it by 24 and combining with min/max temp data
+ 
+  const processData = (dailyData, hourlyData) => {
+      
+      const hourlyTemps = hourlyData.hourly.temperature_2m;
+      const hourlyTimes = hourlyData.hourly.time;
+  
+      // Calculate daily averages from hourly temperatures
+      const dailyAverages = {};
+      
+      //Split into each day
+      hourlyTimes.forEach((time, index) => {
+          const date = time.split('T')[0];
+          if (!dailyAverages[date]) {
+              dailyAverages[date] = [];
+          }
+          dailyAverages[date].push(hourlyTemps[index]);
+      });
+      
+      //Add temp at each hour together
+      for (const [date, temps] of Object.entries(dailyAverages)) {
+          const sum = temps.reduce((a, b) => a + b, 0);
+          dailyAverages[date] = sum / temps.length;
+      }
+  
+      // Combine daily and hourly data for easier sending to server
+      const combinedData = dailyData.daily.time.map((date, index) => {
+          return {
+              date,
+              avgTemp: dailyAverages[date],  
+              maxTemp: dailyData.daily.temperature_2m_max[index],
+              minTemp: dailyData.daily.temperature_2m_min[index],
+          };
+      });
+  
+      return combinedData;
+  };
+  
+  //Function to feth and process data after clicking button
+  const fetchAndProcessData = async (lat,lon) => {
+    try {
+
+        const dailyData = await fetchPastWeatherData(lat, lon);
+
+        const hourlyData = await fetchHourlyData(lat, lon);
+
+        const combinedData = processData(dailyData, hourlyData);
+
+        const prediction = await sendWeatherData(combinedData);
+
+        return prediction;
+
+    } catch (error) {
+        console.error(error.message);
+        return null;
+    }
+};
+
+//Send data to server
+const sendWeatherData = async (combinedData) => {
+    try {
+
+        const response = await fetch('http://localhost:5000/api/predict-temperature', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(combinedData),
+        });
+
+        if (!response.ok) throw new Error('Failed to get prediction');
+
+        const prediction = await response.json();
+        return prediction;
+
+    } catch (error) {
+        console.error('Error:', error.message);
+        return null;
+    }
+};
+
+//Send futre weather data for predictions to server
+const sendFutureWeatherData = async (futureWeatherData) => {
+  try {
+      const response = await fetch('http://localhost:5000/api/future-data', {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(futureWeatherData),
+      });
+
+      if (!response.ok) throw new Error('Failed to send future weather data');
+
+      const result = await response.json();
+
+      console.log('Server response:', result);
+      return result;
+
+  } catch (error) {
+      console.error('Error:', error.message);
+      return null;
+  }
+};
 
   return (
     <div className="App">
@@ -202,7 +405,7 @@ function App() {
       </button>
 
       {/*Container used to display the current temperature and future weather forecasts*/}
-      <WeatherInfoContainer weather={weather} selectedCity={selectedCity} formatDate={formatDate} />
+      <WeatherInfoContainer weather={weather} predictTemp = {predictTemp} selectedCity={selectedCity} formatDate={formatDate} />
 
 
       {error && (
@@ -217,7 +420,6 @@ function App() {
       {/*PopUp information Container*/}
       <InfoPopUp isOpen={popUp} onClose={togglePopUp} />
 
-     
 
     </div>
   );

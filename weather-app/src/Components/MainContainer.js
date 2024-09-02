@@ -2,7 +2,7 @@ import React from "react";
 
 // Main Container for entering City and selecting city from list
 function MainContainer({ city, handleInputChange, handleButtonClick, handleCitySelect, selectedCity, cityOptions }) {
-    console.log('MainContainer cityOptions:', cityOptions);
+    
     return (
         <div className='Main-container'>
             <div className='Sidebar'>
